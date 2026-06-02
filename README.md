@@ -2,7 +2,7 @@
 
 ## 项目简介
 
-基于检索增强生成（RAG）技术的智能文档问答系统。用户可以上传 PDF、TXT、Markdown 等格式的文档，系统会自动对文档进行向量化索引，然后利用本地部署的大语言模型（通过 Ollama）对用户提出的问题进行精准回答，并展示参考来源。
+基于检索增强生成（RAG）技术的智能文档问答系统。用户可以上传 PDF、DOCX 等格式的文档，系统会自动对文档进行向量化索引并存储到 Chroma 向量数据库，然后利用本地部署的大语言模型（通过 Ollama）对用户提出的问题进行精准回答，支持多轮对话和会话记忆功能。
 
 ## 环境要求与安装步骤
 
@@ -53,13 +53,19 @@ ollama --version
 
 ```bash
 # 下载大语言模型（用于生成回答）
-ollama pull qwen2.5:7b
+ollama pull deepseek-r1:7b
+# 或 ollama pull qwen2:7b
 
 # 下载嵌入模型（用于文本向量化）
 ollama pull nomic-embed-text
+# 或 ollama pull all-minilm
 ```
 
-> **提示：** 如果需要使用其他模型，可以在应用侧边栏中修改模型名称。推荐的大语言模型包括 `qwen2.5:7b`、`llama3`、`gemma2` 等；推荐的嵌入模型包括 `nomic-embed-text`、`mxbai-embed-large` 等。
+**验证模型安装：**
+
+```bash
+python test_ollama.py
+```
 
 ## 使用说明
 
@@ -81,18 +87,27 @@ streamlit run app.py
 
 应用启动后，浏览器会自动打开 `http://localhost:8501`。
 
-### 3. 上传文档
+### 3. 上传文档并构建知识库
 
 1. 在左侧边栏找到 **"文档管理"** 区域
-2. 点击 **"上传文档"** 按钮，选择 PDF、TXT、Markdown 或 DOCX 格式的文件
-3. 可调整 **文本块大小** 和 **重叠大小** 参数
-4. 点击 **"索引文档"** 按钮，等待索引完成
+2. 点击 **"上传文档"** 按钮，选择 PDF 或 DOCX 格式的文件（支持多文件上传）
+3. 可调整 **文本块大小**（默认 1000）和 **重叠大小**（默认 200）参数
+4. 点击 **"构建知识库"** 按钮，等待索引完成
 
 ### 4. 开始提问
 
-1. 索引完成后，在底部输入框中输入您的问题
+1. 知识库构建完成后，在底部输入框中输入您的问题
 2. 系统会检索相关文档内容并生成回答
 3. 点击 **"查看参考来源"** 可查看回答所依据的原文片段
+4. 支持多轮对话，系统会记住对话上下文
+
+### 5. 命令行版本
+
+也可以使用命令行版本进行问答：
+
+```bash
+python rag_pipeline.py
+```
 
 ## 项目结构
 
@@ -103,68 +118,134 @@ RAG-QA-System/
 ├── rag_pipeline.py        # RAG 核心流程（索引构建、问答）
 ├── document_loader.py     # 文档加载与文本切分
 ├── embeddings.py          # 向量嵌入模块
+├── test_ollama.py         # Ollama API 测试脚本
+├── build_exe.py           # PyInstaller 打包脚本
 ├── requirements.txt       # Python 依赖列表
 ├── .gitignore             # Git 忽略规则
 ├── README.md              # 项目说明文档
-├── docs/
-│   └── sample_document.md # 示例文档
-├── utils/
+├── docs/                  # 预置文档目录（5份NLP相关文档）
+│   ├── 01_自然语言处理概述.md
+│   ├── 02_Transformer架构详解.md
+│   ├── 03_预训练语言模型.md
+│   ├── 04_词嵌入技术.md
+│   └── 05_RAG检索增强生成.md
+├── utils/                 # 工具函数
 │   ├── __init__.py
-│   └── helpers.py         # 工具函数
+│   └── helpers.py
 ├── uploads/               # 上传文件目录（运行时生成）
-├── vectorstore/           # 向量存储目录（运行时生成）
-└── screenshots/           # 项目截图
+└── chroma_db/             # Chroma 向量数据库目录（运行时生成）
 ```
 
 ## 关键技术点说明
 
 ### RAG 流程
 
-本项目采用经典的 RAG（Retrieval-Augmented Generation）流程：
+本项目采用完整的 RAG（Retrieval-Augmented Generation）流程：
 
-1. **文档加载**：使用 LangChain 的 Document Loaders 加载多种格式的文档（PDF、TXT、Markdown、DOCX）
-2. **文本切分**：使用 `RecursiveCharacterTextSplitter` 将长文档切分为较小的文本块（默认 500 字符/块，50 字符重叠）
-3. **向量化**：使用 Ollama 的 `nomic-embed-text` 模型将文本块转换为向量表示
-4. **向量存储**：使用 FAISS（Facebook AI Similarity Search）构建高效的向量索引
-5. **相似度检索**：用户提问时，将问题向量化，在 FAISS 索引中检索最相关的 K 个文本块
-6. **增强生成**：将检索到的相关文本块作为上下文，连同用户问题一起输入到 LLM 中生成回答
+1. **文档加载**：使用 LangChain 的 Document Loaders 加载多种格式的文档（PDF、DOCX、TXT、Markdown）
+2. **批量处理**：支持批量读取指定文件夹内所有文档
+3. **文本切分**：使用 `RecursiveCharacterTextSplitter`，`chunk_size=1000`，`chunk_overlap=200`
+4. **向量化**：使用 Ollama 的 `nomic-embed-text` 或 `all-minilm` 模型将文本块转换为向量
+5. **向量存储**：使用 **Chroma** 向量数据库存储和检索向量
+6. **相似度检索**：用户提问时，检索最相关的 **3** 个文本块
+7. **增强生成**：使用 `ConversationalRetrievalChain` 连接检索器和 LLM，支持多轮对话
 
 ### 所用模型
 
 | 用途 | 模型 | 说明 |
 |------|------|------|
-| 大语言模型（LLM） | qwen2.5:7b | 阿里云通义千问，中文能力强 |
-| 嵌入模型 | nomic-embed-text | 高质量文本嵌入模型 |
+| 大语言模型（LLM） | deepseek-r1:7b / qwen2:7b | 本地部署的大语言模型 |
+| 嵌入模型 | nomic-embed-text / all-minilm | 文本向量化模型 |
 
 ### 技术栈
 
 - **Web 框架**: Streamlit
 - **LLM 框架**: LangChain
-- **向量数据库**: FAISS
+- **对话链**: ConversationalRetrievalChain（支持会话记忆）
+- **向量数据库**: Chroma
 - **本地模型服务**: Ollama
 - **嵌入方式**: Ollama Embeddings API
 
+### 系统提示词设计
+
+```
+你是一个专业的问答助手。请严格根据以下提供的参考文档内容来回答用户的问题。
+
+重要规则：
+1. 只能基于提供的参考文档内容回答
+2. 如果文档中没有相关信息，必须明确说"文档中未找到相关答案"
+3. 不要编造答案，不要添加文档中没有的信息
+4. 回答要清晰、准确、简洁
+```
+
 ## 项目效果截图
 
-### 1. 主界面 - 文档上传与索引
+### 1. 主界面 - 知识库构建
 
 ![主界面](screenshots/screenshot_1.png)
 
-*上传文档并构建向量索引的界面*
+*上传文档并构建知识库的界面*
 
 ### 2. 问答界面 - 智能问答
 
 ![问答界面](screenshots/screenshot_2.png)
 
-*基于文档内容的智能问答交互*
+*基于文档内容的智能问答交互，显示回答和参考来源*
 
-### 3. 参考来源展示
+### 3. 多轮对话展示
 
-![参考来源](screenshots/screenshot_3.png)
+![多轮对话](screenshots/screenshot_3.png)
 
-*展示回答所依据的文档原文片段*
+*支持多轮对话，系统记住上下文进行连续问答*
 
 > **注意：** 请在运行项目后截取实际界面截图，替换 `screenshots/` 目录下的占位图片。
+
+## 测试用例示例
+
+### 与文档内容相关的问题（应能正确回答）
+
+1. **什么是自然语言处理？**
+   - 预期：解释 NLP 的定义和主要任务
+
+2. **Transformer 的核心组件有哪些？**
+   - 预期：说明自注意力机制、多头注意力、位置编码等
+
+3. **BERT 和 GPT 有什么区别？**
+   - 预期：解释两者在架构和预训练任务上的差异
+
+4. **Word2Vec 的两种架构是什么？**
+   - 预期：说明 CBOW 和 Skip-gram
+
+5. **RAG 的优势有哪些？**
+   - 预期：知识实时更新、减少幻觉、可溯源等
+
+### 与文档内容无关的问题（应回答"未找到相关答案"）
+
+1. **如何制作红烧肉？**
+   - 预期：文档中未找到相关答案
+
+2. **明天的天气怎么样？**
+   - 预期：文档中未找到相关答案
+
+## 打包为可执行文件
+
+### 使用启动脚本（推荐）
+
+```bash
+python build_exe.py
+# 选择选项 1，生成 启动RAG系统.bat
+```
+
+将项目文件和 `启动RAG系统.bat` 一起复制到目标电脑，双击运行即可。
+
+### 使用 PyInstaller 打包（实验性）
+
+```bash
+python build_exe.py
+# 选择选项 2，生成独立的 exe 文件
+```
+
+> **注意**：由于 Streamlit 的特殊架构，完全打包为独立 exe 较为复杂，生成的文件可能较大。
 
 ## 已知问题与改进方向
 
@@ -172,16 +253,17 @@ RAG-QA-System/
 
 - 首次加载嵌入模型时可能较慢，取决于模型大小和硬件性能
 - 对于非常大的文档（如超过 100 页的 PDF），索引构建时间较长
-- 当前仅支持单轮独立问答，暂不支持多轮对话上下文记忆
+- 当前仅支持单用户本地使用，暂不支持多用户并发
 
 ### 改进方向
 
-- [ ] 支持多轮对话，保持上下文记忆
-- [ ] 添加更多文档格式支持（如 PPT、Excel）
+- [ ] 支持更多文档格式（如 PPT、Excel、图片 OCR）
 - [ ] 引入重排序（Reranking）机制提升检索精度
 - [ ] 添加对话历史记录导出功能
 - [ ] 支持同时索引多个文档并进行跨文档问答
 - [ ] 添加流式输出，提升回答生成体验
+- [ ] 实现多用户支持和权限管理
+- [ ] 添加知识库备份和恢复功能
 
 ## 许可证
 

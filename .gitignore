@@ -26,6 +26,7 @@ ENV/
 .streamlit/secrets.toml
 
 # ==================== 向量存储（运行时生成） ====================
+chroma_db/
 vectorstore/
 
 # ==================== 上传文件（运行时生成） ====================
@@ -50,3 +51,8 @@ desktop.ini
 *.tmp
 *.bak
 *.swp
+
+# ==================== PyInstaller ====================
+*.spec
+build/
+dist/
