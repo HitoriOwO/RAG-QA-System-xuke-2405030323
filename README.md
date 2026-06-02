@@ -182,19 +182,19 @@ RAG-QA-System/
 
 ### 1. 主界面 - 知识库构建
 
-![主界面](screenshots/screenshot_1.png)
+![主界面](screenshots/home.png)
 
 *上传文档并构建知识库的界面*
 
 ### 2. 问答界面 - 智能问答
 
-![问答界面](screenshots/screenshot_2.png)
+![问答界面](screenshots/chat.png)
 
 *基于文档内容的智能问答交互，显示回答和参考来源*
 
 ### 3. 多轮对话展示
 
-![多轮对话](screenshots/screenshot_3.png)
+![多轮对话](screenshots/multi_turn.png)
 
 *支持多轮对话，系统记住上下文进行连续问答*
 
